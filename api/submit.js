@@ -1,5 +1,5 @@
 export default async function handler(req, res) {
-  // Clear the path for Framer to securely communicate with this submission route
+  // Clear the path for Framer to safely communicate with this submission route
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -9,9 +9,9 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
-  // Block anything that isn't a form submission
+  // Prevent users from accessing this route with standard browser GET requests
   if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed." });
+    return res.status(405).json({ error: "Method not allowed. Use POST." });
   }
 
   try {
@@ -21,39 +21,24 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "A valid email address is required." });
     }
 
-    // 1. Direct secure handshake to log the row inside your Supabase table instantly
-    const supabaseResponse = await fetch("https://supabase.co", {
+    // Securely pull your hidden Zapier link from your Vercel environment variables panel
+    const zapierUrl = process.env.ZAPIER_WEBHOOK_URL;
+    if (!zapierUrl) {
+      throw new Error("Server configuration error: Missing Zapier Webhook environment variable.");
+    }
+
+    const zapierResponse = await fetch(zapierUrl, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "apikey": "sb_publishable_HyuEG7LFNed1oTaQ7iAUSQ_1z-ULHC3",
-        "Authorization": "Bearer sb_publishable_HyuEG7LFNed1oTaQ7iAUSQ_1z-ULHC3",
-        "Prefer": "return=minimal"
-      },
-      body: JSON.stringify({ 
-        email: String(email), 
-        phone: phone ? String(phone) : "", 
-        promo_code: promoCode ? String(promoCode) : "", 
-        consent: !!consent 
-      })
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, phone, promoCode, consent }),
     });
 
-    if (!supabaseResponse.ok) {
-      console.error("Supabase error status:", supabaseResponse.status);
-      throw new Error("Database logging failed.");
+    if (!zapierResponse.ok) {
+      throw new Error("Failed to forward data to Zapier.");
     }
 
-    // 2. Trigger your existing Zapier spreadsheet tracking pipeline cleanly in the background
-    const zapierUrl = process.env.ZAPIER_WEBHOOK_URL;
-    if (zapierUrl) {
-      await fetch(zapierUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, phone, promoCode, consent })
-      });
-    }
+    return res.status(200).json({ success: true, message: "Submission verified!" });
 
-    return res.status(200).json({ success: true, message: "Logged successfully!" });
   } catch (error) {
     return res.status(500).json({ error: error.message });
   }
